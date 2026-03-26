@@ -6,23 +6,52 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
-import { MOCK_PRODUCTS } from "../page"
+import { analyzeText, saveInquiryCase } from "../actions"
 
 export default function Workspace() {
   const [inputText, setInputText] = useState("")
   const [isAnalyzed, setIsAnalyzed] = useState(false)
+  const [isAnalyzing, setIsAnalyzing] = useState(false)
+  const [targetProduct, setTargetProduct] = useState<any>(null)
   
-  // 假定分析結果對應到 "抗菌噴霧" (id: "3")
-  const targetProduct = MOCK_PRODUCTS.find(p => p.id === "3");
+  const [draftText, setDraftText] = useState("媽咪您好呀👋 寶寶長紅屁屁一定很不舒服，辛苦媽咪了！\n\n我們的產品完全使用天然成分，針對嬌嫩敏感的嬰兒肌膚設計，不會有刺痛問題哦！")
 
-  const handleAnalyze = () => {
+  const handleAnalyze = async () => {
     if (!inputText.trim()) return;
+    setIsAnalyzing(true);
+    const product = await analyzeText(inputText);
+    setTargetProduct(product);
     setIsAnalyzed(true);
+    setIsAnalyzing(false);
   }
 
   const handleReset = () => {
     setIsAnalyzed(false);
     setInputText("");
+    setTargetProduct(null);
+  }
+
+  const handleCopy = (text: string) => {
+    navigator.clipboard.writeText(text);
+    alert("已複製到剪貼簿！");
+  }
+
+  const handleAppendReply = (content: string) => {
+    setDraftText((prev) => prev + "\n\n" + content);
+  }
+
+  const handleRewrite = () => {
+    setDraftText((prev) => "【AI 語氣轉換中...】\n" + prev);
+  }
+
+  const handleSaveDraft = async () => {
+    if (!targetProduct) return;
+    await saveInquiryCase({
+      queryContent: inputText,
+      suggestedProductId: targetProduct.id,
+      finalReply: draftText
+    });
+    alert("已成功儲存為情境案例！");
   }
 
   return (
@@ -77,7 +106,9 @@ export default function Workspace() {
                            <div className="border border-dashed border-gray-300 rounded-lg p-4 text-center bg-gray-50 text-gray-400 text-sm hover:bg-gray-100 cursor-pointer transition-colors">
                               或點擊上傳截圖 / 圖片圖片提取文字
                            </div>
-                           <Button onClick={handleAnalyze} className="w-full bg-rose-600 hover:bg-rose-700 text-white font-bold h-10 shadow-sm">⚡ 啟動 AI 智能分析</Button>
+                           <Button onClick={handleAnalyze} disabled={isAnalyzing} className="w-full bg-rose-600 hover:bg-rose-700 text-white font-bold h-10 shadow-sm">
+                              {isAnalyzing ? "🔄 AI 分析中..." : "⚡ 啟動 AI 智能分析"}
+                           </Button>
                         </div>
                      ) : (
                         <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
@@ -139,12 +170,12 @@ export default function Workspace() {
                         </CardHeader>
                         <CardContent className="p-0 flex-1 bg-gray-50/30 overflow-y-auto max-h-[300px]">
                            <div className="p-4 space-y-4">
-                              {targetProduct.replies.map(reply => (
+                              {targetProduct.replies?.map((reply: any) => (
                                  <div key={reply.id} className="bg-white border border-gray-200 rounded-lg p-3 shadow-sm relative pr-12 group hover:border-rose-300">
                                     {reply.isPremium && <Badge variant="secondary" className="absolute top-2 right-2 bg-amber-50 text-amber-600 border border-amber-200 text-[10px] px-1.5 py-0 shadow-none">神回覆</Badge>}
                                     <p className="text-sm font-bold text-gray-400 mb-1">{reply.scenario}</p>
                                     <p className="text-sm text-gray-800 leading-relaxed font-medium mb-3">{reply.content}</p>
-                                    <Button variant="outline" size="sm" className="w-full text-xs font-bold text-rose-700 bg-rose-50 border-rose-200 hover:bg-rose-100 h-7">採用此回覆架構</Button>
+                                    <Button onClick={() => handleAppendReply(reply.content)} variant="outline" size="sm" className="w-full text-xs font-bold text-rose-700 bg-rose-50 border-rose-200 hover:bg-rose-100 h-7">採用此回覆架構</Button>
                                  </div>
                               ))}
                            </div>
@@ -158,7 +189,7 @@ export default function Workspace() {
                         </CardHeader>
                         <CardContent className="p-0 flex-1 bg-gray-50/30 overflow-y-auto max-h-[300px]">
                            <div className="p-4 grid grid-cols-2 gap-3">
-                              {targetProduct.assets.map(asset => (
+                              {targetProduct.assets?.map((asset: any) => (
                                  <div key={asset.id} className="bg-white border border-gray-200 rounded-lg overflow-hidden group">
                                     {asset.type === '圖片' ? (
                                        <div className="bg-gray-100 aspect-video relative">
@@ -172,7 +203,7 @@ export default function Workspace() {
                                     )}
                                     <div className="p-2">
                                        <h4 className="text-xs font-bold text-gray-900 truncate mb-2">{asset.title}</h4>
-                                       <Button variant="outline" size="sm" className="w-full text-[10px] h-6">✅ 附加到回覆</Button>
+                                       <Button onClick={() => handleAppendReply(`[已提供素材: ${asset.title}]`)} variant="outline" size="sm" className="w-full text-[10px] h-6">✅ 附加到回覆</Button>
                                     </div>
                                  </div>
                               ))}
@@ -189,27 +220,19 @@ export default function Workspace() {
                            <CardTitle className="text-lg text-purple-900 font-bold tracking-tight">自動生成回覆草稿</CardTitle>
                         </div>
                         <div className="flex items-center gap-2">
-                           <Button variant="outline" size="sm" className="bg-white text-purple-700 border-purple-200 hover:bg-purple-50">🔄 換個語氣重寫</Button>
-                           <Button size="sm" className="bg-gray-900 text-white hover:bg-gray-800 shadow-sm">📋 複製文字</Button>
+                           <Button onClick={handleRewrite} variant="outline" size="sm" className="bg-white text-purple-700 border-purple-200 hover:bg-purple-50">🔄 換個語氣重寫</Button>
+                           <Button onClick={() => handleCopy(draftText)} size="sm" className="bg-gray-900 text-white hover:bg-gray-800 shadow-sm">📋 複製文字</Button>
                         </div>
                      </CardHeader>
                      <CardContent className="p-6">
-                        <div className="bg-gray-50 rounded-xl p-5 border border-gray-200 whitespace-pre-line text-gray-800 leading-relaxed font-medium">
-                           媽咪您好呀👋 寶寶長紅屁屁一定很不舒服，辛苦媽咪了！
-                           
-                           我們的「醫療級 SILVÉRION® 抗菌噴霧」完全使用天然檸檬酸銀離子，**零酒精、無色無味**，針對嬌嫩敏感的嬰兒肌膚設計的，絕對不會有刺痛或引起發炎的問題哦！
-                           
-                           您可以放心地在寶寶換尿布前後往屁屁噴灑，噴完免水洗，30秒就能即刻抑菌，還能預防金黃色葡萄球菌滋生。
-                           甚至寶寶口慾期喜歡四處添咬時，拿來噴灑安撫娃娃或固齒器也非常安全喔！✨
-                           
-                           這裡附上我們產品的 SGS 安全無毒檢驗報告供您參考：
-                           🔗 [SGS 檢驗報告] 
-                           
-                           如果有其他問題隨時都可以再問我們喔！
-                        </div>
+                        <Textarea 
+                           className="bg-gray-50 rounded-xl p-5 border border-gray-200 whitespace-pre-wrap text-gray-800 leading-relaxed font-medium h-64 resize-none"
+                           value={draftText}
+                           onChange={(e) => setDraftText(e.target.value)}
+                        />
 
                         <div className="mt-6 flex justify-end">
-                           <Button className="font-bold shadow-sm bg-purple-600 hover:bg-purple-700 text-white">💾 將此草稿儲存為「情境案例」</Button>
+                           <Button onClick={handleSaveDraft} className="font-bold shadow-sm bg-purple-600 hover:bg-purple-700 text-white">💾 將此草稿儲存為「情境案例」</Button>
                         </div>
                      </CardContent>
                   </Card>

@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
+import { createProduct } from "@/app/actions"
 
 export default function ManagePage() {
   return (
@@ -21,13 +22,13 @@ export default function ManagePage() {
           </div>
           <div className="flex gap-3">
             <Button variant="outline" className="font-semibold shadow-sm bg-white">儲存草稿</Button>
-            <Button className="font-bold shadow-sm bg-rose-600 hover:bg-rose-700 text-white">確認發布</Button>
+            <Button type="submit" form="product-form" className="font-bold shadow-sm bg-rose-600 hover:bg-rose-700 text-white">確認發布</Button>
           </div>
         </div>
       </div>
 
       <div className="container mx-auto px-4 max-w-4xl mt-8">
-        <form className="space-y-8">
+        <form id="product-form" action={createProduct} className="space-y-8">
           
           {/* Section 1: Basic Info */}
           <Card className="shadow-sm border-gray-200 overflow-hidden">
@@ -41,20 +42,24 @@ export default function ManagePage() {
                 <div className="space-y-4">
                   <div className="grid gap-2">
                     <label className="text-sm font-bold text-gray-700">商品名稱 <span className="text-rose-500">*</span></label>
-                    <Input placeholder="例如：超彈力無縫托腹帶" defaultValue="超彈力無縫托腹帶" className="border-gray-300 focus-visible:ring-rose-500 font-medium" />
+                    <Input name="name" required placeholder="例如：超彈力無縫托腹帶" className="border-gray-300 focus-visible:ring-rose-500 font-medium" />
+                  </div>
+                  <div className="grid gap-2">
+                    <label className="text-sm font-bold text-gray-700">一句話定位 (Pitch)</label>
+                    <Input name="pitch" placeholder="例如：從孕期到產後，完美支撐不勒肚" className="border-gray-300 focus-visible:ring-rose-500 font-medium" />
                   </div>
                   <div className="grid gap-2">
                     <label className="text-sm font-bold text-gray-700">搜尋關鍵字 (Tags)</label>
-                    <Input placeholder="請用逗號分隔，例如：托腹帶, 恥骨痛, 孕晚期" defaultValue="托腹帶, 恥骨痛, 孕晚期, 肚皮下墜" className="border-gray-300 focus-visible:ring-rose-500 font-medium" />
+                    <Input name="tags" placeholder="請用逗號分隔，例如：托腹帶, 恥骨痛, 孕晚期" className="border-gray-300 focus-visible:ring-rose-500 font-medium" />
                     <p className="text-xs text-gray-400">這些標籤將用於首頁搜尋，幫助快速定位商品</p>
                   </div>
                   <div className="grid gap-2">
                     <label className="text-sm font-bold text-gray-700">商品描述</label>
-                    <Textarea placeholder="輸入完整的商品描述..." className="h-20 border-gray-300 focus-visible:ring-rose-500 font-medium text-sm resize-none" defaultValue="專為亞洲孕婦體型設計的無縫托腹帶..." />
+                    <Textarea name="description" placeholder="輸入完整的商品描述..." className="h-20 border-gray-300 focus-visible:ring-rose-500 font-medium text-sm resize-none" />
                   </div>
                   <div className="grid gap-2">
                     <label className="text-sm font-bold text-gray-700">成分 / 材質</label>
-                    <Input placeholder="例如：純水、檸檬酸銀離子" defaultValue="85% 尼龍 (Nylon)、15% 彈性纖維 (Spandex)" className="border-gray-300 focus-visible:ring-rose-500 font-medium" />
+                    <Input name="ingredients" placeholder="例如：純水、檸檬酸銀離子" className="border-gray-300 focus-visible:ring-rose-500 font-medium" />
                   </div>
                 </div>
             </CardContent>
@@ -71,20 +76,20 @@ export default function ManagePage() {
             <CardContent className="p-6 grid gap-6">
               <div className="grid gap-3">
                 <div className="flex justify-between items-end">
-                   <Label htmlFor="core" className="text-gray-700 font-bold">核心賣點 (Core Selling Points)</Label>
+                   <Label htmlFor="coreSellingPoints" className="text-gray-700 font-bold">核心賣點 (Core Selling Points)</Label>
                    <span className="text-xs text-gray-400">建議條列式輸入 (換行分隔)</span>
                 </div>
-                <Textarea id="core" rows={3} placeholder="例：&#10;- 無縫編織不刺癢&#10;- 業界最強彈力" className="bg-white border-gray-300 focus-visible:ring-rose-500 font-mono" />
+                <Textarea id="coreSellingPoints" name="coreSellingPoints" rows={3} placeholder="例：&#10;- 無縫編織不刺癢&#10;- 業界最強彈力" className="bg-white border-gray-300 focus-visible:ring-rose-500 font-mono" />
               </div>
 
               <div className="grid md:grid-cols-2 gap-6 pt-4 border-t border-gray-100">
                 <div className="grid gap-3">
-                  <Label htmlFor="problems" className="text-gray-700 font-bold">適合解決的問題</Label>
-                  <Textarea id="problems" rows={3} placeholder="例：&#10;- 孕晚期腰痠背痛" className="bg-white border-gray-300 focus-visible:ring-blue-500" />
+                  <Label htmlFor="problemsSolved" className="text-gray-700 font-bold">適合解決的問題</Label>
+                  <Textarea id="problemsSolved" name="problemsSolved" rows={3} placeholder="例：&#10;- 孕晚期腰痠背痛" className="bg-white border-gray-300 focus-visible:ring-blue-500" />
                 </div>
                 <div className="grid gap-3">
-                  <Label htmlFor="audience" className="text-gray-700 font-bold">精準推薦對象</Label>
-                  <Textarea id="audience" rows={3} placeholder="例：&#10;- 懷孕 4 個月以上媽咪" className="bg-white border-gray-300 focus-visible:ring-orange-500" />
+                  <Label htmlFor="targetAudience" className="text-gray-700 font-bold">精準推薦對象</Label>
+                  <Textarea id="targetAudience" name="targetAudience" rows={3} placeholder="例：&#10;- 懷孕 4 個月以上媽咪" className="bg-white border-gray-300 focus-visible:ring-orange-500" />
                 </div>
               </div>
             </CardContent>
@@ -102,13 +107,13 @@ export default function ManagePage() {
                   <div className="grid gap-2">
                      <label className="text-sm font-bold text-gray-700">銷售 Tips</label>
                      <p className="text-xs text-gray-400 mb-1">最容易說服客人的三大情境與話術</p>
-                     <Textarea placeholder="1. 怕悶熱的產婦：主推透氣孔洞設計...&#10;2. 順產產婦：主打產後1週即可當束腹..." className="h-32 border-gray-300 focus-visible:ring-rose-500 text-sm resize-none" defaultValue="1. 孕晚期恥骨痛：教客人怎麼托高肚肚&#10;2. 覺得太緊：提醒客人可以隨著孕肚撕開魔鬼氈重黏" />
+                     <Textarea name="salesTips" placeholder="1. 怕悶熱的產婦：主推透氣孔洞設計...&#10;2. 順產產婦：主打產後1週即可當束腹..." className="h-32 border-gray-300 focus-visible:ring-rose-500 text-sm resize-none" />
                   </div>
                <div className="h-px bg-gray-100 my-2"></div>
               <div className="grid gap-3">
-                <Label htmlFor="variants_info" className="text-green-800 font-bold">延伸規格 / 補充包須知 (Variants Info)</Label>
-                <p className="text-xs text-gray-500">如果這個商品有補充包配置，請直接寫明補充包的規格特點與銷售話術，不須額外建檔。</p>
-                <Textarea id="variants_info" rows={2} className="bg-white border-green-200 focus-visible:ring-green-500" />
+                <Label htmlFor="bossNotes" className="text-green-800 font-bold">內部叮嚀 / 老闆筆記 (Boss Notes)</Label>
+                <p className="text-xs text-gray-500">此款商品的內部核心精神、延伸規格特點與銷售話術避雷點等。</p>
+                <Textarea id="bossNotes" name="bossNotes" rows={3} className="bg-white border-green-200 focus-visible:ring-green-500" />
               </div>
             </CardContent>
           </Card>

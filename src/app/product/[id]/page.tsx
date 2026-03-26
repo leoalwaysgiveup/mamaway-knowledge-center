@@ -6,13 +6,23 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import Link from 'next/link'
-import { MOCK_PRODUCTS } from "../../page"
+import prisma from "@/lib/prisma"
 
 export default async function ProductDetail({ params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = await params;
-  const product = MOCK_PRODUCTS.find(p => p.id === resolvedParams.id);
+  const product = await prisma.product.findUnique({
+    where: { id: resolvedParams.id },
+    include: {
+      assets: true,
+      replies: true
+    }
+  });
   
   if (!product) return notFound()
+
+  const targetAudienceArray = product.targetAudience?.split('\n').filter(Boolean) || [];
+  const coreSellingPointsArray = product.coreSellingPoints?.split('\n').filter(Boolean) || [];
+  const problemsSolvedArray = product.problemsSolved?.split('\n').filter(Boolean) || [];
 
   return (
     <div className="min-h-screen bg-gray-50 font-sans text-gray-900 flex flex-col">
@@ -76,7 +86,7 @@ export default async function ProductDetail({ params }: { params: Promise<{ id: 
                  <div className="mt-6 pt-5 border-t border-gray-100">
                     <div className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">🎯 鎖定推薦對象</div>
                     <ul className="space-y-2">
-                       {product.targetAudience.map((point, idx) => (
+                       {targetAudienceArray.map((point: string, idx: number) => (
                           <li key={idx} className="flex items-start">
                              <span className="text-orange-500 mr-2 text-[10px] mt-1">●</span>
                              <span className="text-sm text-gray-700 font-bold">{point}</span>
@@ -127,7 +137,7 @@ export default async function ProductDetail({ params }: { params: Promise<{ id: 
                      </CardHeader>
                      <CardContent className="p-5">
                         <ul className="space-y-2 text-sm text-gray-700 font-medium">
-                           {product.coreSellingPoints.map((p, i) => (
+                           {coreSellingPointsArray.map((p: string, i: number) => (
                               <li key={i} className="flex gap-2">
                                  <span className="text-rose-500">&bull;</span>
                                  <span>{p}</span>
@@ -143,7 +153,7 @@ export default async function ProductDetail({ params }: { params: Promise<{ id: 
                      </CardHeader>
                      <CardContent className="p-5">
                         <ul className="space-y-2 text-sm text-gray-700 font-medium">
-                           {product.problemsSolved.map((p, i) => (
+                           {problemsSolvedArray.map((p: string, i: number) => (
                               <li key={i} className="flex gap-2">
                                  <span className="text-blue-500">&bull;</span>
                                  <span>{p}</span>
@@ -158,7 +168,7 @@ export default async function ProductDetail({ params }: { params: Promise<{ id: 
                         <CardTitle className="text-base text-gray-900">📝 內部行政補充</CardTitle>
                      </CardHeader>
                      <CardContent className="p-5">
-                        <p className="text-sm text-gray-600 font-medium">該商品建立於：{product.lastUpdated}，負責PM：尚未指派。</p>
+                        <p className="text-sm text-gray-600 font-medium">該商品建立於：{new Date(product.updatedAt).toLocaleDateString()}，負責PM：尚未指派。</p>
                      </CardContent>
                   </Card>
                </div>
@@ -177,14 +187,14 @@ export default async function ProductDetail({ params }: { params: Promise<{ id: 
                      </CardContent>
                   </Card>
 
-                  {product.variantsInfo && (
+                  {product.bossNotes && (
                      <Card className="shadow-sm border-green-200 bg-[#F2FCF5]">
                         <CardHeader className="pb-2">
-                           <CardTitle className="text-lg text-green-900 flex items-center gap-2">♻️ 延伸規格 / 補充包須知</CardTitle>
+                           <CardTitle className="text-lg text-green-900 flex items-center gap-2">♻️ 內部叮嚀 / 老闆筆記</CardTitle>
                         </CardHeader>
                         <CardContent>
                            <p className="whitespace-pre-line text-gray-800 leading-relaxed font-bold block">
-                              {product.variantsInfo}
+                              {product.bossNotes}
                            </p>
                         </CardContent>
                      </Card>
@@ -205,14 +215,14 @@ export default async function ProductDetail({ params }: { params: Promise<{ id: 
                      </label>
                      <select className="text-sm border-gray-200 rounded-md p-2 font-medium bg-white focus:border-rose-500">
                         <option>所有回覆情境</option>
-                        {Array.from(new Set(product.replies.map(r => r.scenario))).map(scene => (
+                        {Array.from(new Set(product.replies.map((r: any) => r.scenario))).map((scene: any) => (
                            <option key={scene}>{scene}</option>
                         ))}
                      </select>
                   </div>
                </div>
                
-               {product.replies.map((reply) => (
+               {product.replies.map((reply: any) => (
                   <Card key={reply.id} className="shadow-sm border border-gray-200 relative overflow-hidden bg-white hover:border-rose-300 transition-colors">
                      {reply.isPremium && <div className="absolute top-0 right-0 w-16 h-16 bg-gradient-to-bl from-amber-100 to-transparent -rotate-12 translate-x-4 -translate-y-4 pointer-events-none"></div>}
                      <div className="flex flex-col sm:flex-row">
@@ -252,7 +262,7 @@ export default async function ProductDetail({ params }: { params: Promise<{ id: 
 
             <TabsContent value="assets" className="focus-visible:outline-none focus-visible:ring-0">
                <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
-                 {product.assets.map((asset) => (
+                 {product.assets.map((asset: any) => (
                     <Card key={asset.id} className="shadow-sm border-gray-200 overflow-hidden flex flex-col bg-white">
                        {asset.type === '圖片' ? (
                           <div className="bg-gray-100 aspect-video w-full border-b border-gray-100 relative group cursor-pointer">

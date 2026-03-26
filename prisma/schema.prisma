@@ -3,9 +3,8 @@ generator client {
 }
 
 datasource db {
-  provider  = "postgresql"
-  url       = env("DATABASE_URL")
-  directUrl = env("DIRECT_URL")
+  provider = "mysql"
+  url      = env("DATABASE_URL")
 }
 
 model Product {
@@ -13,7 +12,7 @@ model Product {
   name              String
   description       String?   // 新增：整體商品簡介
   ingredients       String?   // 新增：成分材質
-  tags              String[]  @default([]) // 人工搜尋關鍵字
+  tags              Json?     // 人工搜尋關鍵字
   pitch             String?   // 一句話定位
   coreSellingPoints String // 核心賣點
   problemsSolved    String // 適合解決的問題
