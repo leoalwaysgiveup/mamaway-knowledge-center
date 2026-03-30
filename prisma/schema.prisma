@@ -13,6 +13,8 @@ model Product {
   description       String?   // 新增：整體商品簡介
   ingredients       String?   // 新增：成分材質
   tags              Json?     // 人工搜尋關鍵字
+  category          String?   // 商品類別（例如：孕期穿著、哺乳用品）
+  problemShortcuts  Json?     // 問題捷徑（字串陣列）
   pitch             String?   // 一句話定位
   coreSellingPoints String // 核心賣點
   problemsSolved    String // 適合解決的問題
@@ -35,6 +37,7 @@ model Reply {
   scenario  String // 對應情境
   note      String? // 內部備註、語氣等
   isPremium Boolean  @default(false)
+  isFAQ     Boolean  @default(false) // 是否為 FAQ
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt // 依需求補上
 }
@@ -61,4 +64,18 @@ model InquiryCase {
   finalReply         String?  @db.Text // 最終敲定的回覆草稿
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
+}
+
+model CategoryDictionary {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model ProblemShortcutDictionary {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }

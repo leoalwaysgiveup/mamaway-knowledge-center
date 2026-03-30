@@ -1,13 +1,51 @@
 import Link from 'next/link'
+import { connection } from "next/server"
 import { Card, CardContent } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
+import {
+  normalizeCategory,
+  normalizeProblemShortcuts,
+  normalizeTags,
+  stripListPrefixForPreview,
+} from "@/lib/product-contracts"
+import { SidebarTaxonomyManager } from "@/components/SidebarTaxonomyManager"
+import { normalizeSearchInput, rankProductsByQuery } from "@/lib/product-matching"
 import prisma from "@/lib/prisma"
 
-export default async function Home({ searchParams }: { searchParams: Promise<{ query?: string }> }) {
+function extractListPreview(value: unknown, limit: number = 2): string[] {
+  if (typeof value !== "string" || !value.trim()) return []
+
+  return value
+    .split("\n")
+    .map((line) => stripListPrefixForPreview(line.trim()))
+    .filter(Boolean)
+    .slice(0, limit)
+}
+
+function getProductCategory(
+  product: { id: string; category?: string | null },
+  categoryByProductId: Map<string, string>
+): string {
+  const explicitCategory = normalizeCategory(product.category)
+  if (explicitCategory) return explicitCategory
+  return normalizeCategory(categoryByProductId.get(product.id))
+}
+
+export default async function Home({
+  searchParams,
+}: {
+  searchParams: Promise<{ q?: string; category?: string; problem?: string }>
+}) {
+  await connection()
+
   const resolvedParams = await searchParams;
-  const query = resolvedParams?.query || "";
+  const q = resolvedParams?.q?.trim() || "";
+  const category = resolvedParams?.category?.trim() || "";
+  const problem = resolvedParams?.problem?.trim() || "";
+  const normalizedTextQuery = normalizeSearchInput(q);
+  const normalizedCategory = normalizeSearchInput(category);
+  const normalizedProblem = normalizeSearchInput(problem);
   
   const allProducts = await prisma.product.findMany({
     include: {
@@ -17,10 +55,122 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ q
     orderBy: { updatedAt: 'desc'}
   });
 
-  const products = allProducts.filter((p: any) => {
-    const pTags = p.tags as string[] | null;
-    return p.name.includes(query) || (pTags && Array.isArray(pTags) && pTags.some((tag: string) => tag.includes(query)))
-  });
+  let productCategoryRows: Array<{ id: string; category: string | null }> = []
+  try {
+    productCategoryRows = await prisma.$queryRaw<Array<{ id: string; category: string | null }>>`
+      SELECT \`id\`, \`category\` FROM \`Product\`
+    `
+  } catch {
+    productCategoryRows = []
+  }
+
+  const categoryByProductId = new Map(
+    productCategoryRows.map((row) => [row.id, normalizeCategory(row.category)])
+  )
+  let categoryDictionary: Array<{ name: string }> = []
+  if (prisma.categoryDictionary?.findMany) {
+    categoryDictionary = await prisma.categoryDictionary.findMany({
+      orderBy: { name: "asc" },
+      select: { name: true },
+    })
+  } else {
+    try {
+      categoryDictionary = await prisma.$queryRaw<Array<{ name: string }>>`
+        SELECT \`name\` FROM \`CategoryDictionary\` ORDER BY \`name\` ASC
+      `
+    } catch {
+      categoryDictionary = []
+    }
+  }
+  const dictionaryCategorySet = new Set(categoryDictionary.map((item) => item.name))
+
+  let problemShortcutDictionary: Array<{ name: string }> = []
+  if (prisma.problemShortcutDictionary?.findMany) {
+    problemShortcutDictionary = await prisma.problemShortcutDictionary.findMany({
+      orderBy: { name: "asc" },
+      select: { name: true },
+    })
+  } else {
+    try {
+      problemShortcutDictionary = await prisma.$queryRaw<Array<{ name: string }>>`
+        SELECT \`name\` FROM \`ProblemShortcutDictionary\` ORDER BY \`name\` ASC
+      `
+    } catch {
+      problemShortcutDictionary = []
+    }
+  }
+  const dictionaryProblemShortcutSet = new Set(problemShortcutDictionary.map((item) => item.name))
+
+  const filteredByTaxonomy = allProducts.filter((product) => {
+    const productCategory = normalizeSearchInput(getProductCategory(product, categoryByProductId))
+    const productShortcuts = normalizeProblemShortcuts(product.problemShortcuts).map((shortcut) =>
+      normalizeSearchInput(shortcut)
+    )
+
+    if (normalizedCategory && productCategory !== normalizedCategory) return false
+    if (
+      normalizedProblem &&
+      !productShortcuts.some(
+        (shortcut) =>
+          shortcut === normalizedProblem ||
+          shortcut.includes(normalizedProblem) ||
+          normalizedProblem.includes(shortcut)
+      )
+    ) {
+      return false
+    }
+    return true
+  })
+
+  const products =
+    normalizedTextQuery === ""
+      ? filteredByTaxonomy
+      : rankProductsByQuery(filteredByTaxonomy, normalizedTextQuery).map((entry) => entry.product);
+
+  const categoryCounter = new Map<string, number>()
+  const explicitCategorySet = new Set<string>()
+  for (const item of categoryDictionary) {
+    categoryCounter.set(item.name, 0)
+  }
+  for (const product of allProducts) {
+    const category = getProductCategory(product, categoryByProductId)
+    if (category) explicitCategorySet.add(category)
+    if (!category) continue
+    categoryCounter.set(category, (categoryCounter.get(category) ?? 0) + 1)
+  }
+
+  const categoryItems = Array.from(categoryCounter.entries())
+    .map(([label, count]) => ({
+      label,
+      count,
+      canDelete: dictionaryCategorySet.has(label) || explicitCategorySet.has(label),
+    }))
+    .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label, "zh-Hant"))
+
+  const problemShortcutCounter = new Map<string, number>()
+  const explicitProblemShortcutSet = new Set<string>()
+  for (const item of problemShortcutDictionary) {
+    problemShortcutCounter.set(item.name, 0)
+  }
+  for (const product of allProducts) {
+    for (const shortcut of normalizeProblemShortcuts(product.problemShortcuts)) {
+      explicitProblemShortcutSet.add(shortcut)
+      problemShortcutCounter.set(shortcut, (problemShortcutCounter.get(shortcut) ?? 0) + 1)
+    }
+  }
+
+  const problemShortcutItems = Array.from(problemShortcutCounter.entries())
+    .map(([label, count]) => ({
+      label,
+      query: label,
+      count,
+      canDelete: dictionaryProblemShortcutSet.has(label) || explicitProblemShortcutSet.has(label),
+    }))
+    .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label, "zh-Hant"))
+
+  const productsWithProblemCount = allProducts.filter(
+    (product) => normalizeProblemShortcuts(product.problemShortcuts).length > 0
+  ).length
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col font-sans text-gray-900">
@@ -41,7 +191,9 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ q
           <div className="flex-1 max-w-xl px-8">
             <form className="relative w-full group">
               <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-rose-500 transition-colors z-10">🔍</span>
-              <Input name="query" placeholder="全域搜尋商品名稱、標籤..." defaultValue={query} className="w-full pl-11 bg-gray-100/80 hover:bg-gray-100 border-transparent focus:bg-white focus:border-rose-300 focus:ring-4 focus:ring-rose-500/10 transition-all rounded-full h-11 shadow-sm font-medium text-gray-900 placeholder:text-gray-400" />
+              {category && <input type="hidden" name="category" value={category} />}
+              {problem && <input type="hidden" name="problem" value={problem} />}
+              <Input name="q" placeholder="先輸入顧客問題（例如：紅屁屁、腰痠、溢乳、悶熱）" defaultValue={q} className="w-full pl-11 bg-gray-100/80 hover:bg-gray-100 border-transparent focus:bg-white focus:border-rose-300 focus:ring-4 focus:ring-rose-500/10 transition-all rounded-full h-11 shadow-sm font-medium text-gray-900 placeholder:text-gray-400" />
             </form>
           </div>
           <div className="flex items-center gap-4">
@@ -55,60 +207,96 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ q
 
       {/* Main Layout */}
       <div className="flex flex-1 overflow-hidden">
-        {/* Left Sidebar (Filters) */}
-        <aside className="w-64 bg-white border-r border-gray-200 hidden md:flex flex-col p-6 overflow-y-auto">
-          <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-4">分類篩選</h2>
-          <div className="space-y-1 mt-2">
-            <Link href="/" className={`w-full flex items-center justify-between text-sm font-bold px-3 py-2.5 rounded-lg transition-colors ${query === "" ? "text-rose-700 bg-rose-50 border border-rose-100" : "text-gray-600 hover:text-gray-900 hover:bg-gray-50 border border-transparent"}`}>
-              全部商品
-              <span className={`text-xs font-bold px-2 py-0.5 rounded-full tracking-wide ${query === "" ? "bg-rose-200 text-rose-800" : "bg-gray-100 text-gray-500"}`}>{allProducts.length}</span>
-            </Link>
-            <Link href="?query=孕期" className={`w-full flex items-center justify-between text-sm font-bold px-3 py-2.5 rounded-lg transition-colors ${query === "孕期" ? "text-rose-700 bg-rose-50 border border-rose-100" : "text-gray-600 hover:text-gray-900 hover:bg-gray-50 border border-transparent"}`}>
-              孕期穿著
-            </Link>
-            <Link href="?query=哺乳" className={`w-full flex items-center justify-between text-sm font-bold px-3 py-2.5 rounded-lg transition-colors ${query === "哺乳" ? "text-rose-700 bg-rose-50 border border-rose-100" : "text-gray-600 hover:text-gray-900 hover:bg-gray-50 border border-transparent"}`}>
-               哺乳內衣
-            </Link>
-            <Link href="?query=洗沐" className={`w-full flex items-center justify-between text-sm font-bold px-3 py-2.5 rounded-lg transition-colors ${query === "洗沐" ? "text-rose-700 bg-rose-50 border border-rose-100" : "text-gray-600 hover:text-gray-900 hover:bg-gray-50 border border-transparent"}`}>
-               洗沐護理
-            </Link>
-          </div>
-          <hr className="my-6 border-gray-100" />
-          <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-4">狀態排序</h2>
-          <select className="w-full text-sm border-gray-200 rounded-md p-2 bg-white shadow-sm focus:border-rose-500 focus:ring-rose-500">
-             <option>最近更新優先</option>
-             <option>建立時間排序</option>
-             <option>回覆數量最多</option>
-          </select>
-        </aside>
+        <SidebarTaxonomyManager
+          textQuery={q}
+          activeCategory={category}
+          activeProblem={problem}
+          totalProducts={allProducts.length}
+          productsWithProblemCount={productsWithProblemCount}
+          categoryItems={categoryItems}
+          problemShortcutItems={problemShortcutItems}
+        />
 
         {/* Right Main Content */}
         <main className="flex-1 overflow-y-auto p-4 md:p-8 bg-gray-50/50">
           <div className="max-w-6xl mx-auto">
             <div className="flex justify-between items-center mb-6">
-              <h2 className="text-2xl font-extrabold text-gray-900 tracking-tight">商品資料夾 ({products.length})</h2>
+              <div>
+                <h2 className="text-2xl font-extrabold text-gray-900 tracking-tight">問題解法商品庫 ({products.length})</h2>
+                {(q || category || problem) && (
+                  <div className="flex flex-wrap items-center gap-2 mt-2">
+                    {q && (
+                      <span className="text-xs font-semibold px-2 py-1 rounded-full bg-gray-100 text-gray-700 border border-gray-200">
+                        關鍵字：{q}
+                      </span>
+                    )}
+                    {category && (
+                      <span className="text-xs font-semibold px-2 py-1 rounded-full bg-rose-50 text-rose-700 border border-rose-100">
+                        類別：{category}
+                      </span>
+                    )}
+                    {problem && (
+                      <span className="text-xs font-semibold px-2 py-1 rounded-full bg-blue-50 text-blue-700 border border-blue-100">
+                        問題：{problem}
+                      </span>
+                    )}
+                    <Link href="/" className="text-xs font-semibold text-gray-500 hover:text-gray-900 underline underline-offset-2">
+                      清除全部條件
+                    </Link>
+                  </div>
+                )}
+              </div>
             </div>
             
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 gap-6">
-              {products.map((product: any) => {
-                 const hasVideo = product.assets.some((a: any) => a.type === '影片');
-                 const hasPremium = product.replies.some((r: any) => r.isPremium);
+              {products.map((product) => {
+                 const productTags = normalizeTags(product.tags);
+                 const productShortcutPreview = normalizeProblemShortcuts(product.problemShortcuts).slice(0, 2)
+                 const problemPreview = extractListPreview(product.problemsSolved, 2)
+                 const audiencePreview = extractListPreview(product.targetAudience, 1)
 
                  return (
                  <Card key={product.id} className="overflow-hidden hover:border-rose-300 hover:shadow-md transition-all duration-200 flex flex-col group bg-white relative">
                   <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-rose-400 to-orange-300 opacity-0 group-hover:opacity-100 transition-opacity"></div>
                   
-                  <div className="flex flex-col items-center justify-center text-center px-6 pt-8 pb-4 relative">
+                  <div className="flex flex-col items-center justify-center text-center px-6 pt-6 pb-4 relative">
                      <h3 className="text-xl font-extrabold text-gray-900 group-hover:text-rose-700 transition-colors">{product.name}</h3>
-                     <span className="text-xs font-medium text-gray-400 mt-2 tracking-wider tabular-nums bg-gray-50 px-2.5 py-0.5 rounded-full border border-gray-100">更新：{new Date(product.updatedAt).toLocaleDateString()}</span>
                   </div>
 
                   <CardContent className="px-6 pb-6 pt-2 flex flex-col flex-1 items-center">
+                    <div className="w-full mb-4 p-3 rounded-lg border border-gray-100 bg-gray-50/60">
+                      {productShortcutPreview.length > 0 && (
+                        <div className="flex flex-wrap gap-1.5 mb-2">
+                          {productShortcutPreview.map((shortcut) => (
+                            <span key={shortcut} className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-100">
+                              {shortcut}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                      {problemPreview.length > 0 ? (
+                        <ul className="text-sm font-semibold text-gray-700 space-y-1 text-left">
+                          {problemPreview.map((item) => (
+                            <li key={item} className="flex gap-2">
+                              <span className="text-rose-500 shrink-0">●</span>
+                              <span className="break-words">{item}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <p className="text-sm text-gray-400 text-left">尚未整理可解決問題</p>
+                      )}
+
+                      {audiencePreview[0] && (
+                        <p className="text-xs text-gray-500 mt-2 text-left">
+                          適合對象：{audiencePreview[0]}
+                        </p>
+                      )}
+                    </div>
                     
-                    {/* Manual Search Tags */}
-                    {product.tags && Array.isArray(product.tags) && product.tags.length > 0 && (
+                    {productTags.length > 0 && (
                        <div className="flex flex-wrap justify-center gap-1.5 mb-6">
-                          {product.tags.map((t: any) => (
+                          {productTags.map((t) => (
                              <span key={t} className="text-xs text-gray-600 bg-white border border-gray-200 hover:border-rose-300 hover:bg-rose-50 hover:text-rose-700 transition-colors px-2.5 py-1 rounded-full font-bold cursor-default shadow-sm">
                                 #{t}
                              </span>
@@ -131,7 +319,24 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ q
               {products.length === 0 && (
                 <div className="col-span-full py-20 text-center text-gray-500 bg-white border border-gray-200 rounded-lg shadow-sm">
                   <span className="text-4xl mb-2 block">🔍</span>
-                  <p>找不到符合「{query}」的商品。</p>
+                  <p>
+                    找不到符合條件的商品
+                    {[q && `關鍵字「${q}」`, category && `類別「${category}」`, problem && `問題「${problem}」`]
+                      .filter(Boolean)
+                      .join("、")}
+                    。
+                  </p>
+                  {category && (
+                    <p className="text-sm mt-2">
+                      這個類別目前尚未指派商品，請到
+                      {" "}
+                      <Link href="/manage" className="underline underline-offset-2 font-semibold text-gray-700 hover:text-gray-900">
+                        商品編輯
+                      </Link>
+                      {" "}
+                      填寫「商品類別」。
+                    </p>
+                  )}
                 </div>
               )}
             </div>
